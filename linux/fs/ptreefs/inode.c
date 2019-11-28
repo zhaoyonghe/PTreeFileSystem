@@ -18,24 +18,24 @@ static int ptreefs_fill_super(struct super_block *s, void *data, int silent)
 
 }
 
-struct dentry *debugfs_create_file(const char *name, umode_t mode,
+struct dentry *ptreefs_create_file(const char *name, umode_t mode,
 				   struct dentry *parent, void *data,
 				   const struct file_operations *fops)
 {
 
 }
 
-struct dentry *debugfs_create_dir(const char *name, struct dentry *parent)
+struct dentry *ptreefs_create_dir(const char *name, struct dentry *parent)
 {
 
 }
 
-void debugfs_remove_recursive(struct dentry *dentry)
+void ptreefs_remove_recursive(struct dentry *dentry)
 {
 	
 }
 
-static int __debugfs_remove(struct dentry *dentry, struct dentry *parent)
+static int __ptreefs_remove(struct dentry *dentry, struct dentry *parent)
 {
 	int ret = 0;
 
@@ -52,7 +52,7 @@ static int __debugfs_remove(struct dentry *dentry, struct dentry *parent)
 	return ret;
 }
 
-void debugfs_remove(struct dentry *dentry)
+void ptreefs_remove(struct dentry *dentry)
 {
 	struct dentry *parent;
 	int ret;
@@ -67,7 +67,7 @@ void debugfs_remove(struct dentry *dentry)
 }
 
 
-static struct dentry *devpts_mount(struct file_system_type *fs_type,
+static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
 	return mount_nodev(fs_type, flags, data, ptreefs_fill_super);
