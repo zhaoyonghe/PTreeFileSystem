@@ -31,7 +31,7 @@ static struct file_operations ptreefs_root_operations = {
 
 static int ptreefs_root_open(struct inode *inode, struct file *file)
 {
-	
+
 }
 
 static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
@@ -40,7 +40,7 @@ static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 	int err;
 	struct inode *inode;
 
-	err  =  simple_fill_super(sb, DEBUGFS_MAGIC, debug_files);
+	err  =  simple_fill_super(sb, PTREEFS_MAGIC, ptree_files);
 	if (err)
 		goto fail;
 	sb->s_op = &ptreefs_super_operations;
