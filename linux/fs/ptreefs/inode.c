@@ -187,6 +187,11 @@ struct dentry *ptreefs_create_dir(struct super_block *sb,
 	return dentry;
 }
 
+static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
+{
+	return 0;
+}
+
 static int __ptreefs_remove(struct dentry *dentry, struct dentry *parent)
 {
 	int ret = 0;
