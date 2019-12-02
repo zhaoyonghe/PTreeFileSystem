@@ -13,6 +13,8 @@
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
 
+static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root);
+
 const struct super_operations ptreefs_super_operations = {
 	.statfs         = simple_statfs,
 	.drop_inode     = generic_delete_inode,
@@ -20,7 +22,11 @@ const struct super_operations ptreefs_super_operations = {
 
 // TODO:
 static int ptreefs_dir_open(struct inode *inode, struct file *file) {
-	return 0;
+	// if exists some directories, remove them
+
+	// create new hierarchy
+	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
+	return dcache_dir_open(inode, file);
 }
 
 const struct file_operations ptreefs_dir_operations = {
@@ -189,6 +195,10 @@ struct dentry *ptreefs_create_dir(struct super_block *sb,
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 {
+	if (ptreefs_create_dir(sb, "test", root) == NULL) {
+		printk("cannot creaet dir!\n");
+		return -EINVAL;
+	}
 	return 0;
 }
 
