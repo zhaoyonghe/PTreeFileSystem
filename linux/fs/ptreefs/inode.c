@@ -293,14 +293,12 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 
 static int __init init_ptree_fs(void)
 {
-	int err;
+	static unsigned long once;
 
-	err = register_filesystem(&ptree_fs_type);
-	// TODO: what is pty_root_table
-	// if (!err) {
-	// 	register_sysctl_table(pty_root_table);
-	// }
-	return err;
+	if (test_and_set_bit(0, &once))
+		return 0;
+
+	return register_filesystem(&ptree_fs_type);
 }
 
 module_init(init_ptree_fs)
