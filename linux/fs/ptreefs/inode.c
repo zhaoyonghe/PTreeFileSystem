@@ -13,6 +13,9 @@
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
 
+static struct vfsmount ptreefs_mount;
+static int ptreefs_mount_count;
+
 static struct file_system_type ptree_fs_type = {
 	.owner =	THIS_MODULE,
 	.name =		"ptreefs",
