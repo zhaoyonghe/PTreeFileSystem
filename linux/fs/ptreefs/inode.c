@@ -13,72 +13,29 @@
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
 
-static struct vfsmount ptreefs_mount;
-static int ptreefs_mount_count;
 
-static struct file_system_type ptree_fs_type = {
-	.owner =	THIS_MODULE,
-	.name =		"ptreefs",
-	.mount =	ptree_mount,
-	.kill_sb =	kill_litter_super,
+static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root);
+
+const struct super_operations ptreefs_super_operations = {
+	.statfs         = simple_statfs,
+	.drop_inode     = generic_delete_inode,
 };
 
-static struct file_operations ptreefs_root_operations = {
-	.open		= ptreefs_root_open,
-	.release	= dcache_dir_close,
-	.llseek		= dcache_dir_lseek,
-	.read		= generic_read_dir,
-	.iterate_shared	= dcache_readdir,
-	.fsync		= noop_fsync,
-}
-
-static int ptreefs_root_open(struct inode *inode, struct file *file)
+static int __ptreefs_remove(struct dentry *dentry, struct dentry *parent)
 {
+	int ret = 0;
 
-}
-
-static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
-{
-	static const struct tree_descr ptree_files[] = {{""}};
-	int err;
-	struct inode *inode;
-
-	err  =  simple_fill_super(sb, PTREEFS_MAGIC, ptree_files);
-	if (err)
-		goto fail;
-	sb->s_op = &ptreefs_super_operations;
-	//inode = d_inode(sb->s_root);
-	inode = new_inode(s);
-	if (!inode)
-		goto fail;
-	inode->i_ino = 1;
-	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
-	inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
-	inode->i_op = &simple_dir_inode_operations;
-	inode->i_fop = &ptreefs_dir_operations;
-	set_nlink(inode, 2);
-
-	s->s_root = d_make_root(inode);
-	if (!s->s_root) {
-		pr_err("get root dentry failed\n");
-		goto fail;
+	if (simple_positive(dentry)) {
+		dget(dentry);
+		if (d_is_dir(dentry))
+			ret = simple_rmdir(d_inode(parent), dentry);
+		else
+			simple_unlink(d_inode(parent), dentry);
+		if (!ret)
+			d_delete(dentry);
+		dput(dentry);
 	}
-	return 0;
-fail:
-	return err;
-
-}
-
-struct dentry *ptreefs_create_file(const char *name, umode_t mode,
-				   struct dentry *parent, void *data,
-				   const struct file_operations *fops)
-{
-
-}
-
-struct dentry *ptreefs_create_dir(const char *name, struct dentry *parent)
-{
-	
+	return ret;
 }
 
 void ptreefs_remove_recursive(struct dentry *dentry)
@@ -112,8 +69,10 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 
 		spin_unlock(&parent->d_lock);
 
-		if (!__ptreefs_remove(child, parent))
-			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+		// TODO: what is ptreefs_mount and ptreefs_mount_count?
+		// if (!__ptreefs_remove(child, parent))
+		// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+		__ptreefs_remove(child, parent);
 
 		/*
 		 * The parent->d_lock protects agaist child from unlinking
@@ -135,48 +94,74 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 		/* go up */
 		goto loop;
 
-	if (!__ptreefs_remove(child, parent))
-		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+	// TODO: same above
+	// if (!__ptreefs_remove(child, parent))
+	// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+	__ptreefs_remove(child, parent);
+
 	inode_unlock(d_inode(parent));
 
-	synchronize_srcu(&ptreefs_srcu);
+	// TODO: what is ptreefs_scru?
+	// synchronize_srcu(&ptreefs_srcu);
 }
 
-static int __ptreefs_remove(struct dentry *dentry, struct dentry *parent)
-{
-	int ret = 0;
+// TODO:
+static int ptreefs_dir_open(struct inode *inode, struct file *file) {
+	// if exists some directories, remove them
+	struct dentry *dentry;
+	struct list_head *d_subdirs;
 
-	if (simple_positive(dentry)) {
-		dget(dentry);
-		if (d_is_dir(dentry))
-			ret = simple_rmdir(d_inode(parent), dentry);
-		else
-			simple_unlink(d_inode(parent), dentry);
-		if (!ret)
-			d_delete(dentry);
-		dput(dentry);
+	dentry = file_dentry(file);
+	d_subdirs = &dentry->d_subdirs;
+	if (!(list_empty(d_subdirs))) {
+		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
 	}
-	return ret;
+
+	// create new hierarchy
+	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
+	return dcache_dir_open(inode, file);
 }
 
-void ptreefs_remove(struct dentry *dentry)
+const struct file_operations ptreefs_dir_operations = {
+	.open 		= ptreefs_dir_open,
+	.release 	= dcache_dir_close,
+	.llseek     = dcache_dir_lseek,
+	.read       = generic_read_dir,
+	.iterate    = dcache_readdir,
+	.fsync      = noop_fsync,
+};
+
+static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 {
-	struct dentry *parent;
-	int ret;
+	static const struct tree_descr ptree_files[] = {{""}};
+	int err;
+	struct inode *inode;
 
-	if (IS_ERR_OR_NULL(dentry))
-		return;
+	err  =  simple_fill_super(sb, PTREEFS_MAGIC, ptree_files);
+	if (err)
+		goto fail;
+	sb->s_op = &ptreefs_super_operations;
+	//inode = d_inode(sb->s_root);
+	inode = new_inode(sb);
+	if (!inode)
+		goto fail;
+	inode->i_ino = 1;
+	inode->i_mtime = inode->i_atime = 
+		inode->i_ctime = current_time(inode);
+	inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
+	inode->i_op = &simple_dir_inode_operations;
+	inode->i_fop = &ptreefs_dir_operations;
+	set_nlink(inode, 2);
 
-	parent = dentry->d_parent;
-	inode_lock(d_inode(parent));
-	ret = __ptreefs_remove(dentry, parent);
-	inode_unlock(d_inode(parent));
-	if (!ret)
-		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-
-	synchronize_srcu(&ptreefs_srcu);
+	sb->s_root = d_make_root(inode);
+	if (!sb->s_root) {
+		pr_err("get root dentry failed\n");
+		goto fail;
+	}
+	return 0;
+fail:
+	return err;
 }
-
 
 static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
@@ -184,16 +169,193 @@ static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
 	return mount_nodev(fs_type, flags, data, ptreefs_fill_super);
 }
 
-static const struct super_operations ptreefs_super_operations = {
-	.statfs		= simple_statfs,
+static struct file_system_type ptree_fs_type = {
+	.owner 		= THIS_MODULE,
+	.name 		= "ptreefs",
+	.mount 		= ptreefs_mount,
+	.kill_sb 	= kill_litter_super,
 };
+
+// TODO: use this somewhere
+// static int ptreefs_root_open(struct inode *inode, struct file *file)
+// {
+// 	return 0;
+// }
+// 
+// static struct file_operations ptreefs_root_operations = {
+// 	.open			= ptreefs_root_open,
+// 	.release		= dcache_dir_close,
+// 	.llseek			= dcache_dir_lseek,
+// 	.read			= generic_read_dir,
+// 	.iterate_shared	= dcache_readdir,
+// 	.fsync			= noop_fsync,
+// };
+
+static ssize_t ptreefs_read_file(struct file *file, 
+	char __user *buf, size_t count, loff_t *ppos)
+{
+	return 0;
+}
+
+static ssize_t ptreefs_write_file(struct file *file, 
+	const char __user *buf, size_t count, loff_t *ppos)
+{
+	return count;
+}
+
+const struct file_operations ptreefs_file_operations = {
+	.open		= simple_open,
+	.read		= ptreefs_read_file,
+	.write		= ptreefs_write_file,
+};
+
+static struct inode *ptreefs_make_inode(struct super_block *sb, int mode)
+{
+	struct inode *inode;
+
+	inode = new_inode(sb);
+
+	if (!inode)
+		return NULL;
+
+	inode->i_ino = get_next_ino();
+	inode->i_mtime = inode->i_atime = 
+		inode->i_ctime = current_time(inode);
+	inode->i_mode = mode;
+	// inode->i_blkbits = PAGE_CACHE_SIZE;
+	// inode->i_blocks = 0;
+
+	return inode;
+};
+
+struct dentry *ptreefs_create_file(struct super_block *sb,
+	struct dentry *dir, const char* name)
+{
+	struct inode *inode;
+	struct dentry *dentry;
+	struct qstr qname;
+
+	qname.name = name;
+	qname.len = strlen(name);
+	// no salt value
+	qname.hash = full_name_hash(NULL, name, qname.len);
+
+	dentry = d_alloc(dir, &qname);
+	if (!dentry)
+		return NULL;
+
+	// permission 0555: read allowed, execute allowed, write prohibiteds
+	inode = ptreefs_make_inode(sb, S_IFREG | 0555);
+	if (!inode) {
+		dput(dentry); // release a dentry
+		return NULL;
+	}
+	inode->i_fop = &ptreefs_file_operations;
+
+	d_add(dentry, inode);
+
+	return dentry;
+}
+
+struct dentry *ptreefs_create_dir(struct super_block *sb, 
+	const char *name, struct dentry *parent)
+{
+	struct dentry *dentry;
+	struct inode *inode;
+	struct qstr qname;
+
+	qname.name = name;
+	qname.len = strlen(name);
+	// no salt value
+	qname.hash = full_name_hash(NULL, name, qname.len);
+
+	dentry = d_alloc(parent, &qname);
+	if (!dentry)
+		return NULL;
+
+	// permission 0555: read allowed, execute allowed, write prohibiteds
+	inode = ptreefs_make_inode(sb, S_IFDIR | 0555);
+	if (!inode) {
+		dput(dentry);
+		return NULL;
+	}
+	inode->i_op = &simple_dir_inode_operations;
+	inode->i_fop = &simple_dir_operations;
+
+	d_add(dentry, inode);
+	return dentry;
+}
+
+static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
+{
+	if (ptreefs_create_dir(sb, "test", root) == NULL) {
+		printk("cannot creaet dir!\n");
+		return -EINVAL;
+	}
+
+	struct task_struct *p;
+	int todo;
+	p = &init_task;
+
+	read_lock(&tasklist_lock);
+	todo = 1;
+
+	while(1) {
+		if (todo == 1) {
+			//TODO: create dir and file based on the information of p
+		}
+
+		if (!list_empty(&p->children)) {
+			p = list_first_entry(&p->children, struct task_struct, sibling);
+		} else if (has_sibling(p)) {
+			p = list_first_entry(&p->sibling, struct task_struct, sibling);
+		} else {
+			p = p->parent;
+			todo = 0;
+		}
+
+		if (p == &init_task) {
+			break;
+		} 
+	}
+
+	read_unlock(&tasklist_lock);
+	kfree(p);
+	return 0;
+}
+
+
+
+// TODO: this function is not used.
+// choose which one? ptreefs_remove or ptreefs_remove_recursive?
+// void ptreefs_remove(struct dentry *dentry)
+// {
+// 	struct dentry *parent;
+// 	int ret;
+
+// 	if (IS_ERR_OR_NULL(dentry))
+// 		return;
+
+// 	parent = dentry->d_parent;
+// 	inode_lock(d_inode(parent));
+// 	ret = __ptreefs_remove(dentry, parent);
+// 	inode_unlock(d_inode(parent));
+// 	if (!ret)
+// 		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+
+// 	synchronize_srcu(&ptreefs_srcu);
+// }
+
+
 
 static int __init init_ptree_fs(void)
 {
-	int err = register_filesystem(&ptree_fs_type);
-	if (!err) {
-		register_sysctl_table(pty_root_table);
-	}
-	return err;
+	static unsigned long once;
+
+	if (test_and_set_bit(0, &once))
+		return 0;
+
+	return register_filesystem(&ptree_fs_type);
 }
+
 module_init(init_ptree_fs)

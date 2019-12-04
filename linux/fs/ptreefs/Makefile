@@ -1,3 +1,3 @@
-ptreefs-objs	:= inode.o
+ptreefs-objs := inode.o
 
-obj-$(CONFIG_PTREE_FS)	+= ptreefs.o
+obj-y += ptreefs.o
