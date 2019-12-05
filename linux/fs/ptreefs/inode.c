@@ -331,28 +331,34 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	while(1) {
 		if (can_go_down) {
 			pid = task_pid_nr(p);
+			printk("%d\n", pid);
 			get_task_comm(process_name, p);
 			replace(process_name);
 
 			sprintf(dir_name, "%d.%s", pid, process_name);
 
 			parent_dir = ptreefs_create_dir(sb, dir_name, parent_dir);
-			if (parent_dir == NULL)
+			if (parent_dir == NULL) {
+				read_unlock(&tasklist_lock);
 				return -ENOMEM; // check if it is correct
+			}
 
 			memset(dir_name, 0, 50);
 			memset(process_name, 0, 16);
 		}
 
 		if (can_go_down && has_children(p)) {
+			printk("%d 1111111111111111111\n", pid);
 			p = list_first_entry(&p->children, struct task_struct, sibling);
 		} else if (has_next_sibling(p)) {
 			// no children, go to the next sibling
+			printk("%d 2222222222222222222\n", pid);
 			p = list_first_entry(&p->sibling, struct task_struct, sibling);
 			can_go_down = true;
 			parent_dir = parent_dir->d_parent;
 		} else {
 			// no chilren, no next sibling
+			printk("%d 3333333333333333333\n", pid);
 			p = p->real_parent;
 			can_go_down = false;
 			parent_dir = parent_dir->d_parent;
