@@ -309,13 +309,11 @@ static bool has_next_sibling(struct task_struct *p)
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 {
+	/*
 	if (ptreefs_create_dir(sb, "test", root) == NULL) {
 		printk("cannot creaet dir!\n");
 		return -EINVAL;
-	}
-
-	// TODO: delete the original dir
-
+	}*/
 	struct task_struct *p;
 	bool can_go_down = true;
 	struct dentry *parent_dir = root;
