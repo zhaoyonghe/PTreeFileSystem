@@ -286,12 +286,30 @@ struct dentry *ptreefs_create_dir(struct super_block *sb,
 	return dentry;
 }
 
+static void replace(char* str)
+{
+	int i;
+	int len = strlen(str);
+	for (i = 0; i < len; i++) {
+		if (str[i] == '/')
+			str[i] = '-';
+	}
+}
+
+static bool has_sibling(struct task_struct *p)
+{
+	return 1;
+}
+
+
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 {
 	if (ptreefs_create_dir(sb, "test", root) == NULL) {
 		printk("cannot creaet dir!\n");
 		return -EINVAL;
 	}
+
+	// TODO: delete the original dir
 
 	struct task_struct *p;
 	int todo;
@@ -303,6 +321,7 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	while(1) {
 		if (todo == 1) {
 			//TODO: create dir and file based on the information of p
+
 		}
 
 		if (!list_empty(&p->children)) {
@@ -320,7 +339,7 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	}
 
 	read_unlock(&tasklist_lock);
-	kfree(p);
+	//kfree(p);
 	return 0;
 }
 
