@@ -296,9 +296,14 @@ static void replace(char* str)
 	}
 }
 
-static bool has_sibling(struct task_struct *p)
+static bool has_children(struct task_struct *p)
 {
-	return 1;
+	return !list_empty(&p->children);
+}
+
+static bool has_next_sibling(struct task_struct *p)
+{
+	return p->sibling.next != &p->real_parent->children;
 }
 
 
@@ -312,25 +317,47 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	// TODO: delete the original dir
 
 	struct task_struct *p;
-	int todo;
+	bool can_go_down = true;
+	struct dentry *parent_dir = root;
+	pid_t pid;
+	char dir_name[50];
+	char process_name[16];
+
+	memset(dir_name, 0, 50);
+	memset(process_name, 0, 16);
+	
 	p = &init_task;
 
 	read_lock(&tasklist_lock);
-	todo = 1;
 
 	while(1) {
-		if (todo == 1) {
-			//TODO: create dir and file based on the information of p
+		if (can_go_down) {
+			pid = task_pid_nr(p);
+			get_task_comm(process_name, p);
+			replace(process_name);
 
+			sprintf(dir_name, "%d.%s", pid, process_name);
+
+			parent_dir = ptreefs_create_dir(sb, dir_name, parent_dir);
+			if (parent_dir == NULL)
+				return -ENOMEM; // check if it is correct
+
+			memset(dir_name, 0, 50);
+			memset(process_name, 0, 16);
 		}
 
-		if (!list_empty(&p->children)) {
+		if (can_go_down && has_children(p)) {
 			p = list_first_entry(&p->children, struct task_struct, sibling);
-		} else if (has_sibling(p)) {
+		} else if (has_next_sibling(p)) {
+			// no children, go to the next sibling
 			p = list_first_entry(&p->sibling, struct task_struct, sibling);
+			can_go_down = true;
+			parent_dir = parent_dir->d_parent;
 		} else {
-			p = p->parent;
-			todo = 0;
+			// no chilren, no next sibling
+			p = p->real_parent;
+			can_go_down = false;
+			parent_dir = parent_dir->d_parent;
 		}
 
 		if (p == &init_task) {
@@ -339,7 +366,6 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	}
 
 	read_unlock(&tasklist_lock);
-	//kfree(p);
 	return 0;
 }
 
