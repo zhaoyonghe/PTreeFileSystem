@@ -105,7 +105,6 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 	synchronize_srcu(&ptreefs_srcu);
 }
 
-// TODO:
 static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	// if exists some directories, remove them
 	struct dentry *dentry;
@@ -177,21 +176,6 @@ static struct file_system_type ptree_fs_type = {
 	.kill_sb 	= kill_litter_super,
 };
 
-// TODO: use this somewhere
-// static int ptreefs_root_open(struct inode *inode, struct file *file)
-// {
-// 	return 0;
-// }
-// 
-// static struct file_operations ptreefs_root_operations = {
-// 	.open			= ptreefs_root_open,
-// 	.release		= dcache_dir_close,
-// 	.llseek			= dcache_dir_lseek,
-// 	.read			= generic_read_dir,
-// 	.iterate_shared	= dcache_readdir,
-// 	.fsync			= noop_fsync,
-// };
-
 static ssize_t ptreefs_read_file(struct file *file, 
 	char __user *buf, size_t count, loff_t *ppos)
 {
@@ -223,40 +207,9 @@ static struct inode *ptreefs_make_inode(struct super_block *sb, int mode)
 	inode->i_mtime = inode->i_atime = 
 		inode->i_ctime = current_time(inode);
 	inode->i_mode = mode;
-	// inode->i_blkbits = PAGE_CACHE_SIZE;
-	// inode->i_blocks = 0;
 
 	return inode;
 };
-
-struct dentry *ptreefs_create_file(struct super_block *sb,
-	struct dentry *dir, const char* name)
-{
-	struct inode *inode;
-	struct dentry *dentry;
-	struct qstr qname;
-
-	qname.name = name;
-	qname.len = strlen(name);
-	// no salt value
-	qname.hash = full_name_hash(NULL, name, qname.len);
-
-	dentry = d_alloc(dir, &qname);
-	if (!dentry)
-		return NULL;
-
-	// permission 0555: read allowed, execute allowed, write prohibiteds
-	inode = ptreefs_make_inode(sb, S_IFREG | 0555);
-	if (!inode) {
-		dput(dentry); // release a dentry
-		return NULL;
-	}
-	inode->i_fop = &ptreefs_file_operations;
-
-	d_add(dentry, inode);
-
-	return dentry;
-}
 
 static struct dentry *start_creating(const char *name, struct dentry *parent)
 {
@@ -309,8 +262,6 @@ static struct dentry *end_creating(struct dentry *dentry)
 	inode_unlock(d_inode(dentry->d_parent));
 	return dentry;
 }
-
-
 
 static struct inode *ptreefs_get_inode(struct super_block *sb)
 {
@@ -435,30 +386,6 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	read_unlock(&tasklist_lock);
 	return 0;
 }
-
-
-
-// TODO: this function is not used.
-// choose which one? ptreefs_remove or ptreefs_remove_recursive?
-// void ptreefs_remove(struct dentry *dentry)
-// {
-// 	struct dentry *parent;
-// 	int ret;
-
-// 	if (IS_ERR_OR_NULL(dentry))
-// 		return;
-
-// 	parent = dentry->d_parent;
-// 	inode_lock(d_inode(parent));
-// 	ret = __ptreefs_remove(dentry, parent);
-// 	inode_unlock(d_inode(parent));
-// 	if (!ret)
-// 		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-
-// 	synchronize_srcu(&ptreefs_srcu);
-// }
-
-
 
 static int __init init_ptree_fs(void)
 {
