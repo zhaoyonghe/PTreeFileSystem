@@ -74,10 +74,8 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 
 		spin_unlock(&parent->d_lock);
 
-		// TODO: what is ptreefs_mount and ptreefs_mount_count?
-		// if (!__ptreefs_remove(child, parent))
-		// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-		__ptreefs_remove(child, parent);
+		if(!__ptreefs_remove(child, parent))
+			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 		/*
 		 * The parent->d_lock protects agaist child from unlinking
@@ -99,15 +97,12 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 		/* go up */
 		goto loop;
 
-	// TODO: same above
-	// if (!__ptreefs_remove(child, parent))
-	// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-	__ptreefs_remove(child, parent);
+	if(!__ptreefs_remove(child, parent))
+			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 	inode_unlock(d_inode(parent));
 
-	// TODO: what is ptreefs_scru?
-	// synchronize_srcu(&ptreefs_srcu);
+	synchronize_srcu(&ptreefs_srcu);
 }
 
 // TODO:
