@@ -19,7 +19,8 @@ static struct vfsmount *ptreefs_mount;
 static int ptreefs_mount_count;
 
 
-static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root);
+static int ptreefs_create_hirearchy(struct super_block *sb,
+	struct dentry *root);
 
 const struct super_operations ptreefs_super_operations = {
 	.statfs         = simple_statfs,
@@ -74,7 +75,7 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 
 		spin_unlock(&parent->d_lock);
 
-		if(!__ptreefs_remove(child, parent))
+		if (!__ptreefs_remove(child, parent))
 			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 		/*
@@ -97,15 +98,16 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 		/* go up */
 		goto loop;
 
-	if(!__ptreefs_remove(child, parent))
-			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+	if (!__ptreefs_remove(child, parent))
+		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 	inode_unlock(d_inode(parent));
 
 	synchronize_srcu(&ptreefs_srcu);
 }
 
-static int ptreefs_dir_open(struct inode *inode, struct file *file) {
+static int ptreefs_dir_open(struct inode *inode, struct file *file)
+{
 	// if exists some directories, remove them
 	struct dentry *dentry;
 	struct list_head *d_subdirs;
@@ -113,8 +115,8 @@ static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	dentry = file_dentry(file);
 	d_subdirs = &dentry->d_subdirs;
 	if (!(list_empty(d_subdirs))) {
-		printk("asdfadsfasfasdf\n");
-		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
+		ptreefs_remove_recursive(list_first_entry(d_subdirs,
+			struct dentry, d_child));
 	}
 
 	// create new hierarchy
@@ -123,8 +125,8 @@ static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 }
 
 const struct file_operations ptreefs_dir_operations = {
-	.open 		= ptreefs_dir_open,
-	.release 	= dcache_dir_close,
+	.open		= ptreefs_dir_open,
+	.release	= dcache_dir_close,
 	.llseek     = dcache_dir_lseek,
 	.read       = generic_read_dir,
 	.iterate    = dcache_readdir,
@@ -133,7 +135,7 @@ const struct file_operations ptreefs_dir_operations = {
 
 static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 {
-	static const struct tree_descr ptree_files[] = {{""}};
+	static const struct tree_descr ptree_files[] = {{""} };
 	int err;
 	struct inode *inode;
 
@@ -146,9 +148,9 @@ static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 	if (!inode)
 		goto fail;
 	inode->i_ino = 1;
-	inode->i_mtime = inode->i_atime = 
+	inode->i_mtime = inode->i_atime =
 		inode->i_ctime = current_time(inode);
-	inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
+	inode->i_mode = S_IFDIR | 0755;
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &ptreefs_dir_operations;
 	set_nlink(inode, 2);
@@ -170,19 +172,19 @@ static struct dentry *ptree_mount(struct file_system_type *fs_type,
 }
 
 static struct file_system_type ptree_fs_type = {
-	.owner 		= THIS_MODULE,
-	.name 		= "ptreefs",
-	.mount 		= ptree_mount,
-	.kill_sb 	= kill_litter_super,
+	.owner		= THIS_MODULE,
+	.name		= "ptreefs",
+	.mount		= ptree_mount,
+	.kill_sb	= kill_litter_super,
 };
 
-static ssize_t ptreefs_read_file(struct file *file, 
+static ssize_t ptreefs_read_file(struct file *file,
 	char __user *buf, size_t count, loff_t *ppos)
 {
 	return 0;
 }
 
-static ssize_t ptreefs_write_file(struct file *file, 
+static ssize_t ptreefs_write_file(struct file *file,
 	const char __user *buf, size_t count, loff_t *ppos)
 {
 	return count;
@@ -204,7 +206,7 @@ static struct inode *ptreefs_make_inode(struct super_block *sb, int mode)
 		return NULL;
 
 	inode->i_ino = get_next_ino();
-	inode->i_mtime = inode->i_atime = 
+	inode->i_mtime = inode->i_atime =
 		inode->i_ctime = current_time(inode);
 	inode->i_mode = mode;
 
@@ -216,7 +218,7 @@ static struct dentry *start_creating(const char *name, struct dentry *parent)
 	struct dentry *dentry;
 	int error;
 
-	pr_debug("ptreefs: creating file '%s'\n",name);
+	pr_debug("ptreefs: creating file '%s'\n", name);
 
 	if (IS_ERR(parent))
 		return parent;
@@ -266,6 +268,7 @@ static struct dentry *end_creating(struct dentry *dentry)
 static struct inode *ptreefs_get_inode(struct super_block *sb)
 {
 	struct inode *inode = new_inode(sb);
+
 	if (inode) {
 		inode->i_ino = get_next_ino();
 		inode->i_atime = inode->i_mtime =
@@ -286,7 +289,7 @@ struct dentry *ptreefs_create_dir(const char *name, struct dentry *parent)
 	if (unlikely(!inode))
 		return failed_creating(dentry);
 
-	inode->i_mode = S_IFDIR | S_IRWXU | S_IRUGO | S_IXUGO;
+	inode->i_mode = S_IFDIR | 0755;
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
 
@@ -300,10 +303,11 @@ struct dentry *ptreefs_create_dir(const char *name, struct dentry *parent)
 
 
 
-static void replace(char* str)
+static void replace(char *str)
 {
 	int i;
 	int len = strlen(str);
+
 	for (i = 0; i < len; i++) {
 		if (str[i] == '/')
 			str[i] = '-';
@@ -323,11 +327,6 @@ static bool has_next_sibling(struct task_struct *p)
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 {
-	/*
-	if (ptreefs_create_dir(sb, "test", root) == NULL) {
-		printk("cannot creaet dir!\n");
-		return -EINVAL;
-	}*/
 	struct task_struct *p;
 	bool can_go_down = true;
 	struct dentry *parent_dir = root;
@@ -337,15 +336,14 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 
 	memset(dir_name, 0, 50);
 	memset(process_name, 0, 16);
-	
+
 	p = &init_task;
 
 	read_lock(&tasklist_lock);
 
-	while(1) {
+	while (1) {
 		if (can_go_down) {
 			pid = task_pid_nr(p);
-			printk("%d\n", pid);
 			get_task_comm(process_name, p);
 			replace(process_name);
 
@@ -362,25 +360,23 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 		}
 
 		if (can_go_down && has_children(p)) {
-			printk("%d 1111111111111111111\n", pid);
-			p = list_first_entry(&p->children, struct task_struct, sibling);
+			p = list_first_entry(&p->children,
+				struct task_struct, sibling);
 		} else if (has_next_sibling(p)) {
 			// no children, go to the next sibling
-			printk("%d 2222222222222222222\n", pid);
-			p = list_first_entry(&p->sibling, struct task_struct, sibling);
+			p = list_first_entry(&p->sibling,
+				struct task_struct, sibling);
 			can_go_down = true;
 			parent_dir = parent_dir->d_parent;
 		} else {
 			// no chilren, no next sibling
-			printk("%d 3333333333333333333\n", pid);
 			p = p->real_parent;
 			can_go_down = false;
 			parent_dir = parent_dir->d_parent;
 		}
 
-		if (p == &init_task) {
+		if (p == &init_task)
 			break;
-		} 
 	}
 
 	read_unlock(&tasklist_lock);
