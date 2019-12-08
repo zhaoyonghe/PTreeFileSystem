@@ -12,7 +12,12 @@
 #include <linux/parser.h>
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
+#include <linux/srcu.h>
 
+DEFINE_SRCU(ptreefs_srcu);
+
+static struct vfsmount *ptreefs_mount;
+static int ptreefs_mount_count;
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root);
 
@@ -69,10 +74,8 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 
 		spin_unlock(&parent->d_lock);
 
-		// TODO: what is ptreefs_mount and ptreefs_mount_count?
-		// if (!__ptreefs_remove(child, parent))
-		// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-		__ptreefs_remove(child, parent);
+		if(!__ptreefs_remove(child, parent))
+			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 		/*
 		 * The parent->d_lock protects agaist child from unlinking
@@ -94,28 +97,28 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 		/* go up */
 		goto loop;
 
-	// TODO: same above
-	// if (!__ptreefs_remove(child, parent))
-	// 	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-	__ptreefs_remove(child, parent);
+	if(!__ptreefs_remove(child, parent))
+			simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
 
 	inode_unlock(d_inode(parent));
 
-	// TODO: what is ptreefs_scru?
-	// synchronize_srcu(&ptreefs_srcu);
+	synchronize_srcu(&ptreefs_srcu);
 }
 
-// TODO:
 static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	// if exists some directories, remove them
 	struct dentry *dentry;
 	struct list_head *d_subdirs;
 
 	dentry = file_dentry(file);
-	d_subdirs = &dentry->d_subdirs;
-	if (!(list_empty(d_subdirs))) {
-		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
+	if (!dentry) {
+		printk("Open dir failed. File dentry is null.\n");
+		return -1;
 	}
+
+	d_subdirs = &dentry->d_subdirs;
+	if (!(list_empty(d_subdirs))) 
+		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
 
 	// create new hierarchy
 	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
@@ -133,16 +136,17 @@ const struct file_operations ptreefs_dir_operations = {
 
 static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 {
-	static const struct tree_descr ptree_files[] = {{""}};
+	static struct tree_descr ptree_files[] = {{""}};
 	int err;
 	struct inode *inode;
 
-	err  =  simple_fill_super(sb, PTREEFS_MAGIC, ptree_files);
+	err = simple_fill_super(sb, PTREEFS_MAGIC, ptree_files);
 	if (err)
 		goto fail;
+	
 	sb->s_op = &ptreefs_super_operations;
-	//inode = d_inode(sb->s_root);
-	inode = new_inode(sb);
+	inode = d_inode(sb->s_root);
+	//inode = new_inode(sb);
 	if (!inode)
 		goto fail;
 	inode->i_ino = 1;
@@ -150,20 +154,21 @@ static int ptreefs_fill_super(struct super_block *sb, void *data, int silent)
 		inode->i_ctime = current_time(inode);
 	inode->i_mode = S_IFDIR | S_IRUGO | S_IXUGO | S_IWUSR;
 	inode->i_op = &simple_dir_inode_operations;
-	inode->i_fop = &ptreefs_dir_operations;
+	inode->i_fop = &ptreefs_dir_operations;	
 	set_nlink(inode, 2);
-
 	sb->s_root = d_make_root(inode);
 	if (!sb->s_root) {
 		pr_err("get root dentry failed\n");
 		goto fail;
 	}
+
 	return 0;
+
 fail:
-	return err;
+	return -ENOMEM;
 }
 
-static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
+static struct dentry *ptree_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
 	return mount_nodev(fs_type, flags, data, ptreefs_fill_super);
@@ -172,24 +177,9 @@ static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
 static struct file_system_type ptree_fs_type = {
 	.owner 		= THIS_MODULE,
 	.name 		= "ptreefs",
-	.mount 		= ptreefs_mount,
+	.mount 		= ptree_mount,
 	.kill_sb 	= kill_litter_super,
 };
-
-// TODO: use this somewhere
-// static int ptreefs_root_open(struct inode *inode, struct file *file)
-// {
-// 	return 0;
-// }
-// 
-// static struct file_operations ptreefs_root_operations = {
-// 	.open			= ptreefs_root_open,
-// 	.release		= dcache_dir_close,
-// 	.llseek			= dcache_dir_lseek,
-// 	.read			= generic_read_dir,
-// 	.iterate_shared	= dcache_readdir,
-// 	.fsync			= noop_fsync,
-// };
 
 static ssize_t ptreefs_read_file(struct file *file, 
 	char __user *buf, size_t count, loff_t *ppos)
@@ -222,8 +212,8 @@ static struct inode *ptreefs_make_inode(struct super_block *sb, int mode)
 	inode->i_mtime = inode->i_atime = 
 		inode->i_ctime = current_time(inode);
 	inode->i_mode = mode;
-	// inode->i_blkbits = PAGE_CACHE_SIZE;
-	// inode->i_blocks = 0;
+	inode->i_blkbits = PAGE_SIZE;
+	inode->i_blocks = 0;
 
 	return inode;
 };
@@ -279,6 +269,7 @@ struct dentry *ptreefs_create_dir(struct super_block *sb,
 		dput(dentry);
 		return NULL;
 	}
+
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
 
@@ -305,7 +296,6 @@ static bool has_next_sibling(struct task_struct *p)
 {
 	return p->sibling.next != &p->real_parent->children;
 }
-
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 {
@@ -343,8 +333,13 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 				return -ENOMEM; // check if it is correct
 			}
 
+			if (!ptreefs_create_file(sb, parent_dir, dir_name))
+				return -ENOMEM;
+
 			memset(dir_name, 0, 50);
 			memset(process_name, 0, 16);
+
+
 		}
 
 		if (can_go_down && has_children(p)) {
@@ -372,30 +367,6 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	read_unlock(&tasklist_lock);
 	return 0;
 }
-
-
-
-// TODO: this function is not used.
-// choose which one? ptreefs_remove or ptreefs_remove_recursive?
-// void ptreefs_remove(struct dentry *dentry)
-// {
-// 	struct dentry *parent;
-// 	int ret;
-
-// 	if (IS_ERR_OR_NULL(dentry))
-// 		return;
-
-// 	parent = dentry->d_parent;
-// 	inode_lock(d_inode(parent));
-// 	ret = __ptreefs_remove(dentry, parent);
-// 	inode_unlock(d_inode(parent));
-// 	if (!ret)
-// 		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
-
-// 	synchronize_srcu(&ptreefs_srcu);
-// }
-
-
 
 static int __init init_ptree_fs(void)
 {
