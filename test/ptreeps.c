@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <signal.h>
 
+const int P_NUM = 20;
+
 void signal_handler(int sig)
 {
 	printf("child [%d] received signal %d\n", getpid(), sig);
@@ -23,13 +25,13 @@ int main()
 {
 	char * argls[] = {"/bin/ls", "-R", NULL};
 	pid_t pid;
-	pid_t pid_array[10];
-	char cwd[PATH_MAX];
+	pid_t pid_array[P_NUM];
 	int status;
 	int w;
 	int i;
 
-	chdir("/ptreefs/");
+	if(chdir("/ptreefs/") < 0)
+		return -1;
 
 	printf("============================================\n");
 	printf("Before creating processes.\n");
@@ -58,10 +60,10 @@ int main()
 	printf("============================================\n");
 	fflush(stdout);
 
-	for (i = 0; i < 10; i++) 
+	for (i = 0; i < P_NUM; i++) 
 		pid_array[i] = 0;
 
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < P_NUM; i++) {
 		pid = fork();
 
 		if (pid < 0) {
@@ -95,10 +97,10 @@ int main()
 	if (w < 0)
 		return EXIT_FAILURE;
 
-	for (i = 0; i < 10; i++)
+	for (i = 0; i < P_NUM; i++)
 		kill(pid_array[i], SIGUSR1);
 
-	for (i = 0; i < 10; i++)
+	for (i = 0; i < P_NUM; i++)
 		wait(NULL);
 
 	printf("==========================================\n");

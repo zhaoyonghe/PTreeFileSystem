@@ -108,15 +108,15 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 // TODO:
 static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	// if exists some directories, remove them
-	/*
 	struct dentry *dentry;
 	struct list_head *d_subdirs;
 
 	dentry = file_dentry(file);
 	d_subdirs = &dentry->d_subdirs;
 	if (!(list_empty(d_subdirs))) {
+		printk("asdfadsfasfasdf\n");
 		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
-	}*/
+	}
 
 	// create new hierarchy
 	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
