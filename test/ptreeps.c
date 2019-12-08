@@ -18,19 +18,18 @@ const int P_NUM = 20;
 void signal_handler(int sig)
 {
 	printf("child [%d] received signal %d\n", getpid(), sig);
-	return;
 }
 
-int main()
+int main(void)
 {
-	char * argls[] = {"/bin/ls", "-R", NULL};
+	static const char *const argls[] = {"/bin/ls", "-R", NULL};
 	pid_t pid;
 	pid_t pid_array[P_NUM];
 	int status;
 	int w;
 	int i;
 
-	if(chdir("/ptreefs/") < 0)
+	if (chdir("/ptreefs/") < 0)
 		return -1;
 
 	printf("============================================\n");
@@ -60,7 +59,7 @@ int main()
 	printf("============================================\n");
 	fflush(stdout);
 
-	for (i = 0; i < P_NUM; i++) 
+	for (i = 0; i < P_NUM; i++)
 		pid_array[i] = 0;
 
 	for (i = 0; i < P_NUM; i++) {
