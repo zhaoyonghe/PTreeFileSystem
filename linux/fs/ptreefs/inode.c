@@ -13,6 +13,11 @@
 #include <linux/fsnotify.h>
 #include <linux/seq_file.h>
 
+DEFINE_SRCU(ptreefs_srcu);
+
+static struct vfsmount *ptreefs_mount;
+static int ptreefs_mount_count;
+
 
 static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root);
 
@@ -108,6 +113,7 @@ void ptreefs_remove_recursive(struct dentry *dentry)
 // TODO:
 static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	// if exists some directories, remove them
+	/*
 	struct dentry *dentry;
 	struct list_head *d_subdirs;
 
@@ -115,7 +121,7 @@ static int ptreefs_dir_open(struct inode *inode, struct file *file) {
 	d_subdirs = &dentry->d_subdirs;
 	if (!(list_empty(d_subdirs))) {
 		ptreefs_remove_recursive(list_first_entry(d_subdirs, struct dentry, d_child));
-	}
+	}*/
 
 	// create new hierarchy
 	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
@@ -163,7 +169,7 @@ fail:
 	return err;
 }
 
-static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
+static struct dentry *ptree_mount(struct file_system_type *fs_type,
 	int flags, const char *dev_name, void *data)
 {
 	return mount_nodev(fs_type, flags, data, ptreefs_fill_super);
@@ -172,7 +178,7 @@ static struct dentry *ptreefs_mount(struct file_system_type *fs_type,
 static struct file_system_type ptree_fs_type = {
 	.owner 		= THIS_MODULE,
 	.name 		= "ptreefs",
-	.mount 		= ptreefs_mount,
+	.mount 		= ptree_mount,
 	.kill_sb 	= kill_litter_super,
 };
 
@@ -257,34 +263,96 @@ struct dentry *ptreefs_create_file(struct super_block *sb,
 	return dentry;
 }
 
-struct dentry *ptreefs_create_dir(struct super_block *sb, 
-	const char *name, struct dentry *parent)
+static struct dentry *start_creating(const char *name, struct dentry *parent)
 {
 	struct dentry *dentry;
-	struct inode *inode;
-	struct qstr qname;
+	int error;
 
-	qname.name = name;
-	qname.len = strlen(name);
-	// no salt value
-	qname.hash = full_name_hash(NULL, name, qname.len);
+	pr_debug("ptreefs: creating file '%s'\n",name);
 
-	dentry = d_alloc(parent, &qname);
-	if (!dentry)
-		return NULL;
+	if (IS_ERR(parent))
+		return parent;
 
-	// permission 0555: read allowed, execute allowed, write prohibiteds
-	inode = ptreefs_make_inode(sb, S_IFDIR | 0555);
-	if (!inode) {
+	error = simple_pin_fs(&ptree_fs_type, &ptreefs_mount,
+			      &ptreefs_mount_count);
+	if (error)
+		return ERR_PTR(error);
+
+	/* If the parent is not specified, we create it in the root.
+	 * We need the root dentry to do this, which is in the super
+	 * block. A pointer to that is in the struct vfsmount that we
+	 * have around.
+	 */
+	if (!parent)
+		parent = ptreefs_mount->mnt_root;
+
+	inode_lock(d_inode(parent));
+	dentry = lookup_one_len(name, parent, strlen(name));
+	if (!IS_ERR(dentry) && d_really_is_positive(dentry)) {
 		dput(dentry);
-		return NULL;
+		dentry = ERR_PTR(-EEXIST);
 	}
+
+	if (IS_ERR(dentry)) {
+		inode_unlock(d_inode(parent));
+		simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+	}
+
+	return dentry;
+}
+
+static struct dentry *failed_creating(struct dentry *dentry)
+{
+	inode_unlock(d_inode(dentry->d_parent));
+	dput(dentry);
+	simple_release_fs(&ptreefs_mount, &ptreefs_mount_count);
+	return NULL;
+}
+
+static struct dentry *end_creating(struct dentry *dentry)
+{
+	inode_unlock(d_inode(dentry->d_parent));
+	return dentry;
+}
+
+
+
+static struct inode *ptreefs_get_inode(struct super_block *sb)
+{
+	struct inode *inode = new_inode(sb);
+	if (inode) {
+		inode->i_ino = get_next_ino();
+		inode->i_atime = inode->i_mtime =
+			inode->i_ctime = current_time(inode);
+	}
+	return inode;
+}
+
+struct dentry *ptreefs_create_dir(const char *name, struct dentry *parent)
+{
+	struct dentry *dentry = start_creating(name, parent);
+	struct inode *inode;
+
+	if (IS_ERR(dentry))
+		return NULL;
+
+	inode = ptreefs_get_inode(dentry->d_sb);
+	if (unlikely(!inode))
+		return failed_creating(dentry);
+
+	inode->i_mode = S_IFDIR | S_IRWXU | S_IRUGO | S_IXUGO;
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
 
-	d_add(dentry, inode);
-	return dentry;
+	/* directory inodes start off with i_nlink == 2 (for "." entry) */
+	inc_nlink(inode);
+	d_instantiate(dentry, inode);
+	inc_nlink(d_inode(dentry->d_parent));
+	fsnotify_mkdir(d_inode(dentry->d_parent), dentry);
+	return end_creating(dentry);
 }
+
+
 
 static void replace(char* str)
 {
@@ -337,7 +405,7 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 
 			sprintf(dir_name, "%d.%s", pid, process_name);
 
-			parent_dir = ptreefs_create_dir(sb, dir_name, parent_dir);
+			parent_dir = ptreefs_create_dir(dir_name, parent_dir);
 			if (parent_dir == NULL) {
 				read_unlock(&tasklist_lock);
 				return -ENOMEM; // check if it is correct
