@@ -22,7 +22,7 @@ void signal_handler(int sig)
 
 int main(void)
 {
-	static const char *const argls[] = {"/bin/ls", "-R", NULL};
+	static char *const argls[] = {"/bin/ls", "-R", NULL};
 	pid_t pid;
 	pid_t pid_array[P_NUM];
 	int status;

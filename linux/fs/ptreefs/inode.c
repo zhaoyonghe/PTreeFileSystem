@@ -19,7 +19,7 @@ static struct vfsmount *ptreefs_mount;
 static int ptreefs_mount_count;
 
 
-static int ptreefs_create_hirearchy(struct super_block *sb,
+static void ptreefs_create_hirearchy(struct super_block *sb,
 	struct dentry *root);
 
 const struct super_operations ptreefs_super_operations = {
@@ -121,6 +121,7 @@ static int ptreefs_dir_open(struct inode *inode, struct file *file)
 
 	// create new hierarchy
 	ptreefs_create_hirearchy(inode->i_sb, inode->i_sb->s_root);
+
 	return dcache_dir_open(inode, file);
 }
 
@@ -194,23 +195,6 @@ const struct file_operations ptreefs_file_operations = {
 	.open		= simple_open,
 	.read		= ptreefs_read_file,
 	.write		= ptreefs_write_file,
-};
-
-static struct inode *ptreefs_make_inode(struct super_block *sb, int mode)
-{
-	struct inode *inode;
-
-	inode = new_inode(sb);
-
-	if (!inode)
-		return NULL;
-
-	inode->i_ino = get_next_ino();
-	inode->i_mtime = inode->i_atime =
-		inode->i_ctime = current_time(inode);
-	inode->i_mode = mode;
-
-	return inode;
 };
 
 static struct dentry *start_creating(const char *name, struct dentry *parent)
@@ -325,7 +309,8 @@ static bool has_next_sibling(struct task_struct *p)
 }
 
 
-static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
+static void ptreefs_create_hirearchy(struct super_block *sb,
+						struct dentry *root)
 {
 	struct task_struct *p;
 	bool can_go_down = true;
@@ -350,9 +335,9 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 			sprintf(dir_name, "%d.%s", pid, process_name);
 
 			parent_dir = ptreefs_create_dir(dir_name, parent_dir);
-			if (parent_dir == NULL) {
+			if (IS_ERR_OR_NULL(parent_dir)) {
 				read_unlock(&tasklist_lock);
-				return -ENOMEM; // check if it is correct
+				return;
 			}
 
 			memset(dir_name, 0, 50);
@@ -380,7 +365,6 @@ static int ptreefs_create_hirearchy(struct super_block *sb, struct dentry *root)
 	}
 
 	read_unlock(&tasklist_lock);
-	return 0;
 }
 
 static int __init init_ptree_fs(void)
