@@ -1,6 +1,7 @@
 # Process Tree File System
 ## Install the kernel
 - `cd ROOT_OF_THIS_REPOSITORY/linux`
+- `make w4118_defconfig`
 - `make -j4`
 - `sudo make modules_install && sudo make install`
 - `reboot`
